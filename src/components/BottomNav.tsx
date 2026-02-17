@@ -30,9 +30,14 @@ export default function BottomNav() {
 
   const filteredMenuItems = menuItems.filter((item) => {
     if (item.href === "/finance" || item.href === "/finance/infak") {
-      return ["bendahara", "ketua", "admin", "sekretaris", "anggota"].includes(
-        user?.role || "",
-      );
+      return [
+        "bendahara",
+        "ketua",
+        "admin",
+        "sekretaris",
+        "anggota",
+        "perlengkapan",
+      ].includes(user?.role || "");
     }
     return true;
   });

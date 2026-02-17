@@ -11,6 +11,7 @@ import {
   Clock,
   Edit,
   History,
+  Minus,
   Package,
   Plus,
   Search,
@@ -30,6 +31,7 @@ interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
+  borrowedQty: number;
   status: "available" | "borrowed" | "damaged";
   updatedAt: Timestamp;
 }
@@ -39,6 +41,7 @@ interface InventoryLog {
   action: "ADD" | "BORROW" | "RETURN" | "DAMAGE" | "REPAIR" | "UPDATE";
   itemName: string;
   itemId?: string;
+  quantity?: number;
   description: string;
   userId: string;
   userName: string;
@@ -59,6 +62,13 @@ export default function InventoryPage() {
   const [submitting, setSubmitting] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 
+  // Borrow/Return Modal State
+  const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [borrowTarget, setBorrowTarget] = useState<InventoryItem | null>(null);
+  const [borrowQty, setBorrowQty] = useState(1);
+  const [borrowDescription, setBorrowDescription] = useState("");
+
   // Check auth
   useEffect(() => {
     if (!loading && !user) {
@@ -76,10 +86,14 @@ export default function InventoryPage() {
         await import("firebase/firestore");
       const q = query(collection(db, "inventory"), orderBy("name"));
       unsubscribe = onSnapshot(q, (snapshot) => {
-        const itemsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as InventoryItem[];
+        const itemsData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            borrowedQty: data.borrowedQty ?? 0,
+          } as InventoryItem;
+        });
         setItems(itemsData);
       });
     })();
@@ -205,6 +219,102 @@ export default function InventoryPage() {
     }
   };
 
+  const handleBorrow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEdit || !borrowTarget || !user) return;
+    setSubmitting(true);
+
+    const availableQty = borrowTarget.quantity - borrowTarget.borrowedQty;
+    if (borrowQty < 1 || borrowQty > availableQty) {
+      await showToast("error", `Jumlah harus antara 1 dan ${availableQty}`);
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const db = await getFirebaseDb();
+      const { doc, serverTimestamp, updateDoc } =
+        await import("firebase/firestore");
+      const newBorrowedQty = borrowTarget.borrowedQty + borrowQty;
+      const newStatus: InventoryItem["status"] =
+        newBorrowedQty >= borrowTarget.quantity ? "borrowed" : "available";
+
+      await updateDoc(doc(db, "inventory", borrowTarget.id), {
+        borrowedQty: newBorrowedQty,
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      await addLog(
+        "BORROW",
+        borrowTarget.name,
+        `Meminjamkan ${borrowQty} unit — ${borrowDescription || "Tanpa keterangan"}`,
+        borrowTarget.id,
+      );
+      await showToast(
+        "success",
+        `${borrowQty} ${borrowTarget.name} berhasil dipinjamkan`,
+      );
+      setIsBorrowModalOpen(false);
+      setBorrowTarget(null);
+      setBorrowQty(1);
+      setBorrowDescription("");
+    } catch (error) {
+      console.error("Error borrowing item:", error);
+      await showToast("error", "Gagal meminjamkan barang");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReturn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEdit || !borrowTarget || !user) return;
+    setSubmitting(true);
+
+    if (borrowQty < 1 || borrowQty > borrowTarget.borrowedQty) {
+      await showToast(
+        "error",
+        `Jumlah harus antara 1 dan ${borrowTarget.borrowedQty}`,
+      );
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const db = await getFirebaseDb();
+      const { doc, serverTimestamp, updateDoc } =
+        await import("firebase/firestore");
+      const newBorrowedQty = borrowTarget.borrowedQty - borrowQty;
+      const newStatus: InventoryItem["status"] =
+        newBorrowedQty > 0 ? "borrowed" : "available";
+
+      await updateDoc(doc(db, "inventory", borrowTarget.id), {
+        borrowedQty: newBorrowedQty,
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      await addLog(
+        "RETURN",
+        borrowTarget.name,
+        `Mengembalikan ${borrowQty} unit — ${borrowDescription || "Tanpa keterangan"}`,
+        borrowTarget.id,
+      );
+      await showToast(
+        "success",
+        `${borrowQty} ${borrowTarget.name} berhasil dikembalikan`,
+      );
+      setIsReturnModalOpen(false);
+      setBorrowTarget(null);
+      setBorrowQty(1);
+      setBorrowDescription("");
+    } catch (error) {
+      console.error("Error returning item:", error);
+      await showToast("error", "Gagal mengembalikan barang");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleStatusChange = async (
     item: InventoryItem,
     newStatus: InventoryItem["status"],
@@ -241,7 +351,10 @@ export default function InventoryPage() {
 
   // Stats
   const totalItems = items.reduce((acc, curr) => acc + curr.quantity, 0);
-  const borrowedItems = items.filter((i) => i.status === "borrowed").length;
+  const totalBorrowed = items.reduce(
+    (acc, curr) => acc + (curr.borrowedQty || 0),
+    0,
+  );
   const damagedItems = items.filter((i) => i.status === "damaged").length;
 
   if (loading || !user) {
@@ -306,7 +419,7 @@ export default function InventoryPage() {
                   Sedang Dipinjam
                 </p>
                 <h3 className="text-2xl font-bold text-gray-900">
-                  {borrowedItems}
+                  {totalBorrowed}
                 </h3>
               </div>
               <div className="p-2 bg-yellow-50 rounded-lg text-yellow-600">
@@ -378,25 +491,24 @@ export default function InventoryPage() {
                           <h3 className="font-bold text-gray-900">
                             {item.name}
                           </h3>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs font-medium bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-                              Qty: {item.quantity}
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="text-xs font-medium bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">
+                              Tersedia:{" "}
+                              {item.quantity - (item.borrowedQty || 0)}
                             </span>
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
-                                item.status === "available"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : item.status === "borrowed"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {item.status === "available"
-                                ? "Tersedia"
-                                : item.status === "borrowed"
-                                  ? "Dipinjam"
-                                  : "Rusak"}
+                            {(item.borrowedQty || 0) > 0 && (
+                              <span className="text-xs font-medium bg-yellow-50 px-2 py-0.5 rounded text-yellow-700">
+                                Dipinjam: {item.borrowedQty}
+                              </span>
+                            )}
+                            <span className="text-xs font-medium bg-gray-100 px-2 py-0.5 rounded text-gray-500">
+                              Total: {item.quantity}
                             </span>
+                            {item.status === "damaged" && (
+                              <span className="text-xs font-bold bg-red-100 px-2 py-0.5 rounded text-red-700 uppercase tracking-wide">
+                                Rusak
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -423,31 +535,28 @@ export default function InventoryPage() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                           <div className="w-px h-6 bg-gray-200 mx-1"></div>
-                          {item.status === "available" && (
+                          {item.quantity - (item.borrowedQty || 0) > 0 &&
+                            item.status !== "damaged" && (
+                              <button
+                                onClick={() => {
+                                  setBorrowTarget(item);
+                                  setBorrowQty(1);
+                                  setBorrowDescription("");
+                                  setIsBorrowModalOpen(true);
+                                }}
+                                className="text-sm px-3 py-1.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 rounded-lg font-medium transition-colors"
+                              >
+                                Pinjamkan
+                              </button>
+                            )}
+                          {(item.borrowedQty || 0) > 0 && (
                             <button
-                              onClick={() =>
-                                handleStatusChange(
-                                  item,
-                                  "borrowed",
-                                  "BORROW",
-                                  "Nama peminjam & kegiatan:",
-                                )
-                              }
-                              className="text-sm px-3 py-1.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 rounded-lg font-medium transition-colors"
-                            >
-                              Pinjamkan
-                            </button>
-                          )}
-                          {item.status === "borrowed" && (
-                            <button
-                              onClick={() =>
-                                handleStatusChange(
-                                  item,
-                                  "available",
-                                  "RETURN",
-                                  "Diterima oleh & kondisi:",
-                                )
-                              }
+                              onClick={() => {
+                                setBorrowTarget(item);
+                                setBorrowQty(1);
+                                setBorrowDescription("");
+                                setIsReturnModalOpen(true);
+                              }}
                               className="text-sm px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg font-medium transition-colors"
                             >
                               Kembalikan
@@ -619,6 +728,195 @@ export default function InventoryPage() {
                     : editingItem
                       ? "Simpan Perubahan"
                       : "Simpan Barang"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Borrow Modal */}
+      {isBorrowModalOpen && borrowTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <h2 className="text-xl font-bold mb-1">Pinjamkan Barang</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {borrowTarget.name} — Tersedia:{" "}
+              <span className="font-semibold text-emerald-600">
+                {borrowTarget.quantity - borrowTarget.borrowedQty}
+              </span>{" "}
+              unit
+            </p>
+            <form onSubmit={handleBorrow} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jumlah yang dipinjamkan
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBorrowQty((q) => Math.max(1, q - 1))}
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={borrowTarget.quantity - borrowTarget.borrowedQty}
+                    value={borrowQty}
+                    onChange={(e) =>
+                      setBorrowQty(
+                        Math.max(
+                          1,
+                          Math.min(
+                            borrowTarget.quantity - borrowTarget.borrowedQty,
+                            parseInt(e.target.value) || 1,
+                          ),
+                        ),
+                      )
+                    }
+                    className="w-20 text-center px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBorrowQty((q) =>
+                        Math.min(
+                          borrowTarget.quantity - borrowTarget.borrowedQty,
+                          q + 1,
+                        ),
+                      )
+                    }
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nama peminjam & kegiatan
+                </label>
+                <input
+                  type="text"
+                  value={borrowDescription}
+                  onChange={(e) => setBorrowDescription(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="Contoh: Ahmad — Kegiatan Jumat"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBorrowModalOpen(false);
+                    setBorrowTarget(null);
+                  }}
+                  className="flex-1 py-2 px-4 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 px-4 rounded-xl text-white bg-yellow-500 hover:bg-yellow-600 font-medium transition-colors disabled:opacity-70"
+                >
+                  {submitting ? "Memproses..." : `Pinjamkan ${borrowQty} Unit`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Return Modal */}
+      {isReturnModalOpen && borrowTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <h2 className="text-xl font-bold mb-1">Kembalikan Barang</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {borrowTarget.name} — Sedang dipinjam:{" "}
+              <span className="font-semibold text-yellow-600">
+                {borrowTarget.borrowedQty}
+              </span>{" "}
+              unit
+            </p>
+            <form onSubmit={handleReturn} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jumlah yang dikembalikan
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBorrowQty((q) => Math.max(1, q - 1))}
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={borrowTarget.borrowedQty}
+                    value={borrowQty}
+                    onChange={(e) =>
+                      setBorrowQty(
+                        Math.max(
+                          1,
+                          Math.min(
+                            borrowTarget.borrowedQty,
+                            parseInt(e.target.value) || 1,
+                          ),
+                        ),
+                      )
+                    }
+                    className="w-20 text-center px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBorrowQty((q) =>
+                        Math.min(borrowTarget.borrowedQty, q + 1),
+                      )
+                    }
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Diterima oleh & kondisi
+                </label>
+                <input
+                  type="text"
+                  value={borrowDescription}
+                  onChange={(e) => setBorrowDescription(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="Contoh: Ahmad — Kondisi baik"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsReturnModalOpen(false);
+                    setBorrowTarget(null);
+                  }}
+                  className="flex-1 py-2 px-4 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 px-4 rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 font-medium transition-colors disabled:opacity-70"
+                >
+                  {submitting ? "Memproses..." : `Kembalikan ${borrowQty} Unit`}
                 </button>
               </div>
             </form>
