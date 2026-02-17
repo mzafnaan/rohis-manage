@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-// const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris"];
+const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris", "anggota"];
 
 export default function InfakDetailPage() {
   const { user, loading: authLoading } = useAuth();

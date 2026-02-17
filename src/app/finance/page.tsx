@@ -17,40 +17,9 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-// --- Components ---
+import { SummaryCard } from "@/components/finance/SummaryCard";
 
-const SummaryCard = ({
-  title,
-  amount,
-  icon: Icon,
-  colorClass,
-  delay,
-}: {
-  title: string;
-  amount: number;
-  icon: React.ElementType;
-  colorClass: string;
-  delay: number;
-}) => (
-  <div
-    className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-sm border border-gray-100/50 flex items-center gap-5 hover:shadow-md transition-shadow group animate-fadeInUp"
-    style={{ animationDelay: `${delay}s` }}
-  >
-    <div
-      className={`p-4 rounded-2xl ${colorClass} bg-opacity-10 group-hover:scale-110 transition-transform duration-300`}
-    >
-      <Icon className={`w-8 h-8 ${colorClass.replace("bg-", "text-")}`} />
-    </div>
-    <div>
-      <p className="text-sm font-semibold text-gray-400 mb-1">{title}</p>
-      <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
-        Rp {amount.toLocaleString("id-ID")}
-      </h3>
-    </div>
-  </div>
-);
-
-const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris"];
+const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris", "anggota"];
 
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();
@@ -127,10 +96,10 @@ export default function FinancePage() {
   // "Menghitung total pemasukan dan pengeluaran per jenis dana." -> implies separation.
   // But the UI only has 3 cards. I will add a 4th card for "Saldo Infak".
 
-  const totalIncome = transactions
+  const totalIncome = kasTransactions
     .filter((t) => t.type === "income")
     .reduce((acc, curr) => acc + curr.amount, 0);
-  const totalExpense = transactions
+  const totalExpense = kasTransactions
     .filter((t) => t.type === "expense")
     .reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -274,21 +243,21 @@ export default function FinancePage() {
           title="Saldo Kas Utama"
           amount={kasBalance}
           icon={Wallet}
-          colorClass="text-blue-600 bg-blue-50"
+          className="bg-blue-50 text-blue-600"
           delay={0}
         />
         <SummaryCard
-          title="Total Pemasukan"
+          title="Total Pemasukan (Kas Utama)"
           amount={totalIncome}
           icon={ArrowDownCircle}
-          colorClass="text-emerald-600 bg-emerald-50"
+          className="bg-emerald-50 text-emerald-600"
           delay={0.1}
         />
         <SummaryCard
-          title="Total Pengeluaran"
+          title="Total Pengeluaran (Kas Utama)"
           amount={totalExpense}
           icon={ArrowUpCircle}
-          colorClass="text-red-600 bg-red-50"
+          className="bg-red-50 text-red-600"
           delay={0.2}
         />
       </div>

@@ -46,9 +46,9 @@ export default function AgendaPage() {
   // Role-based permissions
   const isAdminOrSecretary = ["admin", "sekretaris"].includes(user?.role || "");
   const isChairman = ["ketua"].includes(user?.role || "");
-  const canAdd = isAdminOrSecretary;
+  const canAdd = isAdminOrSecretary || isChairman;
   const canEdit = isAdminOrSecretary || isChairman;
-  const canDelete = isAdminOrSecretary;
+  const canDelete = isAdminOrSecretary || isChairman;
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;

@@ -1,5 +1,6 @@
 "use client";
 
+import { SummaryCard } from "@/components/finance/SummaryCard";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseDb } from "@/lib/firebase";
 import { InfakSession } from "@/types/finance";
@@ -17,7 +18,7 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris"];
+const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris", "anggota"];
 
 export default function InfakListPage() {
   const { user, loading: authLoading } = useAuth();
@@ -72,8 +73,6 @@ export default function InfakListPage() {
       };
 
       const docRef = await addDoc(collection(db, "infak_sessions"), newSession);
-      // Redirect handled by Link or router push usually, but here we just created it.
-      // We should probably redirect to the edit page.
       window.location.href = `/finance/infak/${docRef.id}`;
     } catch (error) {
       console.error("Error creating session:", error);
@@ -122,6 +121,11 @@ export default function InfakListPage() {
     s.title.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
+  // Calculate Total Infak from Completed Sessions
+  const totalInfak = sessions
+    .filter((s) => s.status === "completed")
+    .reduce((acc, curr) => acc + (curr.total || 0), 0);
+
   const formatDate = (timestamp: Timestamp) => {
     if (!timestamp) return "-";
     try {
@@ -151,6 +155,12 @@ export default function InfakListPage() {
         <p className="text-gray-500 mt-2">
           Anda tidak memiliki izin untuk melihat halaman ini.
         </p>
+        <Link
+          href="/"
+          className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors"
+        >
+          Kembali ke Dashboard
+        </Link>
       </div>
     );
   }
@@ -182,6 +192,17 @@ export default function InfakListPage() {
             Buat Sesi Baru
           </button>
         )}
+      </div>
+
+      {/* Summary Card - Total Infak */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <SummaryCard
+          title="Total Dana Infak Terkumpul"
+          amount={totalInfak}
+          icon={HeartHandshake}
+          className="bg-emerald-50 text-emerald-600"
+          delay={0}
+        />
       </div>
 
       {/* List */}

@@ -30,7 +30,7 @@ export default function BottomNav() {
 
   const filteredMenuItems = menuItems.filter((item) => {
     if (item.href === "/finance" || item.href === "/finance/infak") {
-      return ["bendahara", "ketua", "admin", "sekretaris"].includes(
+      return ["bendahara", "ketua", "admin", "sekretaris", "anggota"].includes(
         user?.role || "",
       );
     }

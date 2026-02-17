@@ -24,6 +24,9 @@ export default function DashboardBalanceCard() {
         let expense = 0;
         txSnap.docs.forEach((doc) => {
           const d = doc.data();
+          // Filter out Infak transactions
+          if (d.fundType === "infak") return;
+
           if (d.type === "income") income += Number(d.amount);
           else if (d.type === "expense") expense += Number(d.amount);
         });

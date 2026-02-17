@@ -25,7 +25,9 @@ export default function TasksPage() {
     );
   }
 
-  const canEditSchedule = user.role === "sekretaris" || user.role === "admin";
+  const canEditSchedule = ["sekretaris", "admin", "ketua"].includes(
+    user?.role || "",
+  );
 
   return (
     <main className="min-h-screen pb-20 md:pb-0 bg-gray-50 p-6 md:p-8">
