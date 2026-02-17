@@ -5,10 +5,10 @@ import clsx from "clsx";
 import {
   Calendar,
   ClipboardList,
+  HeartHandshake,
   LayoutDashboard,
   Megaphone,
   Package,
-  User,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
@@ -18,10 +18,10 @@ const menuItems = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/agenda", label: "Agenda", icon: Calendar },
   { href: "/finance", label: "Kas", icon: Wallet },
+  { href: "/finance/infak", label: "Infak", icon: HeartHandshake },
   { href: "/announcements", label: "Info", icon: Megaphone },
   { href: "/tasks", label: "Tugas", icon: ClipboardList },
   { href: "/inventory", label: "Barang", icon: Package },
-  { href: "/profile", label: "Profil", icon: User },
 ];
 
 export default function BottomNav() {
@@ -29,7 +29,7 @@ export default function BottomNav() {
   const { user } = useAuth();
 
   const filteredMenuItems = menuItems.filter((item) => {
-    if (item.href === "/finance") {
+    if (item.href === "/finance" || item.href === "/finance/infak") {
       return ["bendahara", "ketua", "admin", "sekretaris"].includes(
         user?.role || "",
       );

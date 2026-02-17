@@ -12,6 +12,8 @@ const Sidebar = dynamic(() => import("./Sidebar"), {
   loading: () => <SidebarSkeleton />,
 });
 
+const UserNav = dynamic(() => import("./UserNav"), { ssr: false });
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
@@ -45,6 +47,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         {children}
+
+        {/* Top Right User Nav - Only on Home Page */}
+        {showInteractiveNav && pathname === "/" && (
+          <div className="fixed top-4 right-4 z-30 md:top-6 md:right-8">
+            <UserNav />
+          </div>
+        )}
       </div>
     </>
   );

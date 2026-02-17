@@ -5,11 +5,11 @@ import clsx from "clsx";
 import {
   Calendar,
   ClipboardList,
+  HeartHandshake,
   LayoutDashboard,
   LogOut,
   Megaphone,
   Package,
-  User,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
@@ -19,10 +19,10 @@ const menuItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/agenda", label: "Agenda", icon: Calendar },
   { href: "/finance", label: "Kas", icon: Wallet },
+  { href: "/finance/infak", label: "Infak", icon: HeartHandshake },
   { href: "/announcements", label: "Pengumuman", icon: Megaphone },
   { href: "/tasks", label: "Tugas", icon: ClipboardList },
   { href: "/inventory", label: "Perlengkapan", icon: Package },
-  { href: "/profile", label: "Profil", icon: User },
 ];
 
 export default function Sidebar() {
@@ -30,7 +30,7 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
 
   const filteredMenuItems = menuItems.filter((item) => {
-    if (item.href === "/finance") {
+    if (item.href === "/finance" || item.href === "/finance/infak") {
       return ["bendahara", "ketua", "admin", "sekretaris"].includes(
         user?.role || "",
       );

@@ -2,11 +2,13 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseDb } from "@/lib/firebase";
+import { FundType, Transaction } from "@/types/finance";
 import type { Timestamp } from "firebase/firestore";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
   Edit,
+  HeartHandshake,
   Loader2,
   Plus,
   Search,
@@ -14,16 +16,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-
-// --- Types ---
-interface Transaction {
-  id: string;
-  description: string;
-  amount: number;
-  type: "income" | "expense";
-  date: Timestamp;
-  createdBy: string;
-}
 
 // --- Components ---
 
@@ -74,6 +66,7 @@ export default function FinancePage() {
     description: "",
     amount: "",
     type: "income" as "income" | "expense",
+    fundType: "kas" as FundType,
   });
 
   // Permissions
@@ -107,13 +100,39 @@ export default function FinancePage() {
     return () => unsubscribe?.();
   }, []);
 
+  const kasTransactions = transactions.filter(
+    (t) => !t.fundType || t.fundType === "kas",
+  );
+  // const infakTransactions = transactions.filter((t) => t.fundType === "infak");
+
+  // Kas Balance
+  const kasIncome = kasTransactions
+    .filter((t) => t.type === "income")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const kasExpense = kasTransactions
+    .filter((t) => t.type === "expense")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const kasBalance = kasIncome - kasExpense;
+
+  // Infak Balance calculation removed as card is removed
+  // const infakIncome = ...
+  // const infakBalance = ...
+
+  // Global Totals (for other cards if needed, or we just show Kas vs Infak)
+  // Request says "Add summary of Infak Balance".
+  // And "Don't change main card structure drastically".
+  // Existing: Saldo Kas, Total Pemasukan, Total Pengeluaran.
+  // We can keep Total Pemasukan/Pengeluaran as Global (Kas + Infak) or just Kas.
+  // Let's make them Global for now, or per convention.
+  // "Menghitung total pemasukan dan pengeluaran per jenis dana." -> implies separation.
+  // But the UI only has 3 cards. I will add a 4th card for "Saldo Infak".
+
   const totalIncome = transactions
     .filter((t) => t.type === "income")
     .reduce((acc, curr) => acc + curr.amount, 0);
   const totalExpense = transactions
     .filter((t) => t.type === "expense")
     .reduce((acc, curr) => acc + curr.amount, 0);
-  const balance = totalIncome - totalExpense;
 
   const filteredTransactions = transactions.filter((t) =>
     t.description.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -133,6 +152,7 @@ export default function FinancePage() {
         description: formData.description,
         amount: Number(formData.amount),
         type: formData.type,
+        fundType: formData.fundType,
         date: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -172,6 +192,7 @@ export default function FinancePage() {
       description: t.description,
       amount: t.amount.toString(),
       type: t.type,
+      fundType: t.fundType || "kas",
     });
     setIsDialogOpen(true);
   };
@@ -182,6 +203,7 @@ export default function FinancePage() {
       description: "",
       amount: "",
       type: "income",
+      fundType: "kas",
     });
   };
 
@@ -249,8 +271,8 @@ export default function FinancePage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <SummaryCard
-          title="Saldo Kas"
-          amount={balance}
+          title="Saldo Kas Utama"
+          amount={kasBalance}
           icon={Wallet}
           colorClass="text-blue-600 bg-blue-50"
           delay={0}
@@ -292,6 +314,7 @@ export default function FinancePage() {
               <tr>
                 <th className="px-6 py-4">Tanggal</th>
                 <th className="px-6 py-4">Keterangan</th>
+                <th className="px-6 py-4">Dana</th>
                 <th className="px-6 py-4">Jenis</th>
                 <th className="px-6 py-4">Nominal</th>
                 {isBendahara && <th className="px-6 py-4 text-right">Aksi</th>}
@@ -301,7 +324,7 @@ export default function FinancePage() {
               {filteredTransactions.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -323,6 +346,17 @@ export default function FinancePage() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 font-medium">
                       {t.description}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          t.fundType === "infak"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {t.fundType === "infak" ? "Infak" : "Kas"}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -390,6 +424,44 @@ export default function FinancePage() {
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Sumber Dana
+                </label>
+                <div className="flex gap-4 mb-4">
+                  <label className="flex-1 cursor-pointer group">
+                    <input
+                      type="radio"
+                      name="fundType"
+                      value="kas"
+                      checked={formData.fundType === "kas"}
+                      onChange={() =>
+                        setFormData({ ...formData, fundType: "kas" })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="text-center py-3 rounded-xl border-2 border-gray-100 peer-checked:bg-blue-50 peer-checked:border-blue-500 peer-checked:text-blue-700 transition-all font-medium text-sm text-gray-500 group-hover:border-gray-200 flex items-center justify-center gap-2">
+                      <Wallet className="w-4 h-4" />
+                      Kas Umum
+                    </div>
+                  </label>
+                  <label className="flex-1 cursor-pointer group">
+                    <input
+                      type="radio"
+                      name="fundType"
+                      value="infak"
+                      checked={formData.fundType === "infak"}
+                      onChange={() =>
+                        setFormData({ ...formData, fundType: "infak" })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="text-center py-3 rounded-xl border-2 border-gray-100 peer-checked:bg-purple-50 peer-checked:border-purple-500 peer-checked:text-purple-700 transition-all font-medium text-sm text-gray-500 group-hover:border-gray-200 flex items-center justify-center gap-2">
+                      <HeartHandshake className="w-4 h-4" />
+                      Dana Infak
+                    </div>
+                  </label>
+                </div>
+
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Jenis Transaksi
                 </label>
