@@ -19,7 +19,14 @@ import { useEffect, useState } from "react";
 
 import { SummaryCard } from "@/components/finance/SummaryCard";
 
-const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris", "anggota"];
+const allowedRoles = [
+  "bendahara",
+  "ketua",
+  "admin",
+  "sekretaris",
+  "anggota",
+  "perlengkapan",
+];
 
 export default function FinancePage() {
   const { user, loading: authLoading } = useAuth();

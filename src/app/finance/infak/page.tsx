@@ -18,7 +18,14 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const allowedRoles = ["bendahara", "ketua", "admin", "sekretaris", "anggota"];
+const allowedRoles = [
+  "bendahara",
+  "ketua",
+  "admin",
+  "sekretaris",
+  "anggota",
+  "perlengkapan",
+];
 
 export default function InfakListPage() {
   const { user, loading: authLoading } = useAuth();
