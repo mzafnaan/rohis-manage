@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -32,6 +33,7 @@ interface InventoryItem {
   name: string;
   quantity: number;
   borrowedQty: number;
+  damagedQty: number;
   status: "available" | "borrowed" | "damaged";
   updatedAt: Timestamp;
 }
@@ -69,6 +71,13 @@ export default function InventoryPage() {
   const [borrowQty, setBorrowQty] = useState(1);
   const [borrowDescription, setBorrowDescription] = useState("");
 
+  // Damage/Repair Modal State
+  const [isDamageModalOpen, setIsDamageModalOpen] = useState(false);
+  const [isRepairModalOpen, setIsRepairModalOpen] = useState(false);
+  const [damageTarget, setDamageTarget] = useState<InventoryItem | null>(null);
+  const [damageQty, setDamageQty] = useState(1);
+  const [damageDescription, setDamageDescription] = useState("");
+
   // Check auth
   useEffect(() => {
     if (!loading && !user) {
@@ -92,6 +101,7 @@ export default function InventoryPage() {
             id: doc.id,
             ...data,
             borrowedQty: data.borrowedQty ?? 0,
+            damagedQty: data.damagedQty ?? 0,
           } as InventoryItem;
         });
         setItems(itemsData);
@@ -315,33 +325,109 @@ export default function InventoryPage() {
     }
   };
 
-  const handleStatusChange = async (
-    item: InventoryItem,
-    newStatus: InventoryItem["status"],
-    action: InventoryLog["action"],
-    descriptionPrompt: string,
-  ) => {
-    if (!canEdit) return;
+  const handleDamage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEdit || !damageTarget || !user) return;
+    setSubmitting(true);
 
-    const description = prompt(descriptionPrompt);
-    if (description === null) return;
+    const availableQty =
+      damageTarget.quantity -
+      damageTarget.borrowedQty -
+      (damageTarget.damagedQty || 0);
+    if (damageQty < 1 || damageQty > availableQty) {
+      await showToast("error", `Jumlah harus antara 1 dan ${availableQty}`);
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const db = await getFirebaseDb();
       const { doc, serverTimestamp, updateDoc } =
         await import("firebase/firestore");
-      await updateDoc(doc(db, "inventory", item.id), {
+      const newDamagedQty = (damageTarget.damagedQty || 0) + damageQty;
+      const totalUnavailable = damageTarget.borrowedQty + newDamagedQty;
+      const newStatus: InventoryItem["status"] =
+        totalUnavailable >= damageTarget.quantity ? "damaged" : "available";
+
+      await updateDoc(doc(db, "inventory", damageTarget.id), {
+        damagedQty: newDamagedQty,
         status: newStatus,
         updatedAt: serverTimestamp(),
       });
       await addLog(
-        action,
-        item.name,
-        description || `${action} barang`,
-        item.id,
+        "DAMAGE",
+        damageTarget.name,
+        `Melaporkan ${damageQty} unit rusak — ${damageDescription || "Tanpa keterangan"}`,
+        damageTarget.id,
       );
+      await showToast(
+        "success",
+        `${damageQty} ${damageTarget.name} dilaporkan rusak`,
+      );
+      setIsDamageModalOpen(false);
+      setDamageTarget(null);
+      setDamageQty(1);
+      setDamageDescription("");
     } catch (error) {
-      console.error("Error updating status:", error);
+      console.error("Error reporting damage:", error);
+      await showToast("error", "Gagal melaporkan kerusakan");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRepair = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEdit || !damageTarget || !user) return;
+    setSubmitting(true);
+
+    if (damageQty < 1 || damageQty > (damageTarget.damagedQty || 0)) {
+      await showToast(
+        "error",
+        `Jumlah harus antara 1 dan ${damageTarget.damagedQty}`,
+      );
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const db = await getFirebaseDb();
+      const { doc, serverTimestamp, updateDoc } =
+        await import("firebase/firestore");
+      const newDamagedQty = (damageTarget.damagedQty || 0) - damageQty;
+      const newStatus: InventoryItem["status"] =
+        newDamagedQty > 0 || damageTarget.borrowedQty > 0
+          ? damageTarget.borrowedQty >= damageTarget.quantity
+            ? "borrowed"
+            : newDamagedQty > 0
+              ? "damaged"
+              : "available"
+          : "available";
+
+      await updateDoc(doc(db, "inventory", damageTarget.id), {
+        damagedQty: newDamagedQty,
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      await addLog(
+        "REPAIR",
+        damageTarget.name,
+        `Memperbaiki ${damageQty} unit — ${damageDescription || "Tanpa keterangan"}`,
+        damageTarget.id,
+      );
+      await showToast(
+        "success",
+        `${damageQty} ${damageTarget.name} selesai diperbaiki`,
+      );
+      setIsRepairModalOpen(false);
+      setDamageTarget(null);
+      setDamageQty(1);
+      setDamageDescription("");
+    } catch (error) {
+      console.error("Error repairing item:", error);
+      await showToast("error", "Gagal memperbaiki barang");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -355,7 +441,10 @@ export default function InventoryPage() {
     (acc, curr) => acc + (curr.borrowedQty || 0),
     0,
   );
-  const damagedItems = items.filter((i) => i.status === "damaged").length;
+  const totalDamaged = items.reduce(
+    (acc, curr) => acc + (curr.damagedQty || 0),
+    0,
+  );
 
   if (loading || !user) {
     return (
@@ -391,58 +480,57 @@ export default function InventoryPage() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AnimatedCard
-            delay={0.1}
-            className="p-4 border-l-4 border-l-blue-500"
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div
+            className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-sm border border-gray-100/50 flex items-center gap-5 hover:shadow-md transition-shadow group animate-fadeInUp"
+            style={{ animationDelay: "0s" }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">Total Aset</p>
-                <h3 className="text-2xl font-bold text-gray-900">
-                  {totalItems}
-                </h3>
-              </div>
-              <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
-                <Box className="w-6 h-6" />
-              </div>
+            <div className="p-4 rounded-2xl bg-blue-50 text-blue-600 bg-opacity-10 group-hover:scale-110 transition-transform duration-300">
+              <Box className="w-8 h-8" />
             </div>
-          </AnimatedCard>
+            <div>
+              <p className="text-sm font-semibold text-gray-400 mb-1">
+                Total Aset
+              </p>
+              <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                {totalItems}
+              </h3>
+            </div>
+          </div>
 
-          <AnimatedCard
-            delay={0.2}
-            className="p-4 border-l-4 border-l-yellow-500"
+          <div
+            className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-sm border border-gray-100/50 flex items-center gap-5 hover:shadow-md transition-shadow group animate-fadeInUp"
+            style={{ animationDelay: "0.1s" }}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Sedang Dipinjam
-                </p>
-                <h3 className="text-2xl font-bold text-gray-900">
-                  {totalBorrowed}
-                </h3>
-              </div>
-              <div className="p-2 bg-yellow-50 rounded-lg text-yellow-600">
-                <Clock className="w-6 h-6" />
-              </div>
+            <div className="p-4 rounded-2xl bg-yellow-50 text-yellow-600 bg-opacity-10 group-hover:scale-110 transition-transform duration-300">
+              <Clock className="w-8 h-8" />
             </div>
-          </AnimatedCard>
+            <div>
+              <p className="text-sm font-semibold text-gray-400 mb-1">
+                Sedang Dipinjam
+              </p>
+              <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                {totalBorrowed}
+              </h3>
+            </div>
+          </div>
 
-          <AnimatedCard delay={0.3} className="p-4 border-l-4 border-l-red-500">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500">
-                  Perlu Perbaikan
-                </p>
-                <h3 className="text-2xl font-bold text-gray-900">
-                  {damagedItems}
-                </h3>
-              </div>
-              <div className="p-2 bg-red-50 rounded-lg text-red-600">
-                <AlertCircle className="w-6 h-6" />
-              </div>
+          <div
+            className="bg-white/80 backdrop-blur-xl p-6 rounded-3xl shadow-sm border border-gray-100/50 flex items-center gap-5 hover:shadow-md transition-shadow group animate-fadeInUp"
+            style={{ animationDelay: "0.2s" }}
+          >
+            <div className="p-4 rounded-2xl bg-red-50 text-red-600 bg-opacity-10 group-hover:scale-110 transition-transform duration-300">
+              <AlertCircle className="w-8 h-8" />
             </div>
-          </AnimatedCard>
+            <div>
+              <p className="text-sm font-semibold text-gray-400 mb-1">
+                Perlu Perbaikan
+              </p>
+              <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
+                {totalDamaged}
+              </h3>
+            </div>
+          </div>
         </div>
 
         {/* Search */}
@@ -494,21 +582,23 @@ export default function InventoryPage() {
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="text-xs font-medium bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">
                               Tersedia:{" "}
-                              {item.quantity - (item.borrowedQty || 0)}
+                              {item.quantity -
+                                (item.borrowedQty || 0) -
+                                (item.damagedQty || 0)}
                             </span>
                             {(item.borrowedQty || 0) > 0 && (
                               <span className="text-xs font-medium bg-yellow-50 px-2 py-0.5 rounded text-yellow-700">
                                 Dipinjam: {item.borrowedQty}
                               </span>
                             )}
+                            {(item.damagedQty || 0) > 0 && (
+                              <span className="text-xs font-medium bg-red-50 px-2 py-0.5 rounded text-red-700">
+                                Rusak: {item.damagedQty}
+                              </span>
+                            )}
                             <span className="text-xs font-medium bg-gray-100 px-2 py-0.5 rounded text-gray-500">
                               Total: {item.quantity}
                             </span>
-                            {item.status === "damaged" && (
-                              <span className="text-xs font-bold bg-red-100 px-2 py-0.5 rounded text-red-700 uppercase tracking-wide">
-                                Rusak
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -535,20 +625,22 @@ export default function InventoryPage() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                           <div className="w-px h-6 bg-gray-200 mx-1"></div>
-                          {item.quantity - (item.borrowedQty || 0) > 0 &&
-                            item.status !== "damaged" && (
-                              <button
-                                onClick={() => {
-                                  setBorrowTarget(item);
-                                  setBorrowQty(1);
-                                  setBorrowDescription("");
-                                  setIsBorrowModalOpen(true);
-                                }}
-                                className="text-sm px-3 py-1.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 rounded-lg font-medium transition-colors"
-                              >
-                                Pinjamkan
-                              </button>
-                            )}
+                          {item.quantity -
+                            (item.borrowedQty || 0) -
+                            (item.damagedQty || 0) >
+                            0 && (
+                            <button
+                              onClick={() => {
+                                setBorrowTarget(item);
+                                setBorrowQty(1);
+                                setBorrowDescription("");
+                                setIsBorrowModalOpen(true);
+                              }}
+                              className="text-sm px-3 py-1.5 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 rounded-lg font-medium transition-colors"
+                            >
+                              Pinjamkan
+                            </button>
+                          )}
                           {(item.borrowedQty || 0) > 0 && (
                             <button
                               onClick={() => {
@@ -562,35 +654,35 @@ export default function InventoryPage() {
                               Kembalikan
                             </button>
                           )}
-                          {item.status !== "damaged" && (
+                          {item.quantity -
+                            (item.borrowedQty || 0) -
+                            (item.damagedQty || 0) >
+                            0 && (
                             <button
-                              onClick={() =>
-                                handleStatusChange(
-                                  item,
-                                  "damaged",
-                                  "DAMAGE",
-                                  "Detail kerusakan:",
-                                )
-                              }
+                              onClick={() => {
+                                setDamageTarget(item);
+                                setDamageQty(1);
+                                setDamageDescription("");
+                                setIsDamageModalOpen(true);
+                              }}
                               className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Lapor Rusak"
                             >
                               <AlertCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {item.status === "damaged" && (
+                          {(item.damagedQty || 0) > 0 && (
                             <button
-                              onClick={() =>
-                                handleStatusChange(
-                                  item,
-                                  "available",
-                                  "REPAIR",
-                                  "Catatan perbaikan:",
-                                )
-                              }
+                              onClick={() => {
+                                setDamageTarget(item);
+                                setDamageQty(1);
+                                setDamageDescription("");
+                                setIsRepairModalOpen(true);
+                              }}
                               className="text-sm px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg font-medium transition-colors"
                             >
-                              Selesai Perbaikan
+                              <Wrench className="w-3.5 h-3.5 inline mr-1" />
+                              Perbaiki
                             </button>
                           )}
                         </div>
@@ -917,6 +1009,207 @@ export default function InventoryPage() {
                   className="flex-1 py-2 px-4 rounded-xl text-white bg-emerald-600 hover:bg-emerald-700 font-medium transition-colors disabled:opacity-70"
                 >
                   {submitting ? "Memproses..." : `Kembalikan ${borrowQty} Unit`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Damage Modal */}
+      {isDamageModalOpen && damageTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <h2 className="text-xl font-bold mb-1">Lapor Kerusakan</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {damageTarget.name} — Tersedia:{" "}
+              <span className="font-semibold text-emerald-600">
+                {damageTarget.quantity -
+                  damageTarget.borrowedQty -
+                  (damageTarget.damagedQty || 0)}
+              </span>{" "}
+              unit
+            </p>
+            <form onSubmit={handleDamage} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jumlah barang rusak
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDamageQty((q) => Math.max(1, q - 1))}
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={
+                      damageTarget.quantity -
+                      damageTarget.borrowedQty -
+                      (damageTarget.damagedQty || 0)
+                    }
+                    value={damageQty}
+                    onChange={(e) =>
+                      setDamageQty(
+                        Math.max(
+                          1,
+                          Math.min(
+                            damageTarget.quantity -
+                              damageTarget.borrowedQty -
+                              (damageTarget.damagedQty || 0),
+                            parseInt(e.target.value) || 1,
+                          ),
+                        ),
+                      )
+                    }
+                    className="w-20 text-center px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none font-bold text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDamageQty((q) =>
+                        Math.min(
+                          damageTarget.quantity -
+                            damageTarget.borrowedQty -
+                            (damageTarget.damagedQty || 0),
+                          q + 1,
+                        ),
+                      )
+                    }
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Detail kerusakan
+                </label>
+                <input
+                  type="text"
+                  value={damageDescription}
+                  onChange={(e) => setDamageDescription(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
+                  placeholder="Contoh: Kabel putus, speaker mati"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDamageModalOpen(false);
+                    setDamageTarget(null);
+                  }}
+                  className="flex-1 py-2 px-4 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 px-4 rounded-xl text-white bg-red-500 hover:bg-red-600 font-medium transition-colors disabled:opacity-70"
+                >
+                  {submitting
+                    ? "Memproses..."
+                    : `Laporkan ${damageQty} Unit Rusak`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Repair Modal */}
+      {isRepairModalOpen && damageTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl animate-scaleIn">
+            <h2 className="text-xl font-bold mb-1">Perbaiki Barang</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {damageTarget.name} — Rusak:{" "}
+              <span className="font-semibold text-red-600">
+                {damageTarget.damagedQty}
+              </span>{" "}
+              unit
+            </p>
+            <form onSubmit={handleRepair} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jumlah yang diperbaiki
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDamageQty((q) => Math.max(1, q - 1))}
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={damageTarget.damagedQty}
+                    value={damageQty}
+                    onChange={(e) =>
+                      setDamageQty(
+                        Math.max(
+                          1,
+                          Math.min(
+                            damageTarget.damagedQty,
+                            parseInt(e.target.value) || 1,
+                          ),
+                        ),
+                      )
+                    }
+                    className="w-20 text-center px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDamageQty((q) =>
+                        Math.min(damageTarget.damagedQty, q + 1),
+                      )
+                    }
+                    className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Catatan perbaikan
+                </label>
+                <input
+                  type="text"
+                  value={damageDescription}
+                  onChange={(e) => setDamageDescription(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="Contoh: Ganti kabel, solder ulang"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRepairModalOpen(false);
+                    setDamageTarget(null);
+                  }}
+                  className="flex-1 py-2 px-4 rounded-xl text-gray-600 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 py-2 px-4 rounded-xl text-white bg-blue-500 hover:bg-blue-600 font-medium transition-colors disabled:opacity-70"
+                >
+                  {submitting ? "Memproses..." : `Perbaiki ${damageQty} Unit`}
                 </button>
               </div>
             </form>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { LogOut, User } from "lucide-react";
+import { LogOut, Shield, User } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -42,6 +42,14 @@ export default function UserNav() {
             >
               <User className="w-4 h-4" />
               Profil Saya
+            </Link>
+            <Link
+              href="/roles"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <Shield className="w-4 h-4" />
+              Peran & Hak Akses
             </Link>
             <button
               onClick={() => {
