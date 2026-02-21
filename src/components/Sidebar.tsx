@@ -46,11 +46,8 @@ export default function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 hidden md:flex flex-col z-20">
       <div className="p-6 border-b border-gray-100 flex items-center justify-center">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-500 bg-clip-text text-transparent">
-          Rohis manage
-        </h1>
+        <h1 className="text-xl font-bold text-green-600">Rohis Manage</h1>
       </div>
-
       <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
         {filteredMenuItems.map((item) => {
           const Icon = item.icon;
