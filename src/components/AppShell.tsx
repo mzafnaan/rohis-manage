@@ -21,7 +21,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Optimistic navigation: Show nav structure on all pages except login
   // This prevents layout shifts while auth is loading
   const isLoginPage = pathname === "/login";
-  const shouldShowNav = !isLoginPage;
+  const isLaporanPage = pathname.startsWith("/laporan");
+  const shouldShowNav = !isLoginPage && !isLaporanPage;
 
   // Only render actual interactive components if auth is ready/confirmed
   // But always reserve space to correct CLS

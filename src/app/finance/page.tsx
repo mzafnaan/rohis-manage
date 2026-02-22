@@ -59,6 +59,7 @@ export default function FinancePage() {
   const kasTransactions = transactions.filter(
     (t) => !t.fundType || t.fundType === "kas",
   );
+  const infakTransactions = transactions.filter((t) => t.fundType === "infak");
 
   const kasIncome = kasTransactions
     .filter((t) => t.type === "income")
@@ -68,6 +69,14 @@ export default function FinancePage() {
     .reduce((acc, curr) => acc + curr.amount, 0);
   const kasBalance = kasIncome - kasExpense;
 
+  const infakIncome = infakTransactions
+    .filter((t) => t.type === "income")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const infakExpense = infakTransactions
+    .filter((t) => t.type === "expense")
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  const infakBalance = infakIncome - infakExpense;
+
   const filteredTransactions = transactions.filter((t) =>
     t.description.toLowerCase().includes(searchTerm.toLowerCase()),
   );
@@ -76,6 +85,39 @@ export default function FinancePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isBendahara) return;
+
+    const amount = Number(formData.amount);
+
+    // Validasi saldo tidak boleh minus saat pengeluaran
+    if (formData.type === "expense") {
+      const currentBalance =
+        formData.fundType === "kas" ? kasBalance : infakBalance;
+      let effectiveBalance = currentBalance;
+
+      // Saat edit, kembalikan dulu dampak transaksi lama
+      if (editingId) {
+        const oldTx = transactions.find((t) => t.id === editingId);
+        if (oldTx) {
+          const sameFund =
+            (formData.fundType === "kas" &&
+              (!oldTx.fundType || oldTx.fundType === "kas")) ||
+            formData.fundType === oldTx.fundType;
+          if (sameFund) {
+            effectiveBalance +=
+              oldTx.type === "expense" ? oldTx.amount : -oldTx.amount;
+          }
+        }
+      }
+
+      if (amount > effectiveBalance) {
+        const fundLabel = formData.fundType === "kas" ? "Kas" : "Infak";
+        alert(
+          `Saldo ${fundLabel} tidak mencukupi!\nSaldo tersedia: Rp ${effectiveBalance.toLocaleString("id-ID")}\nPengeluaran: Rp ${amount.toLocaleString("id-ID")}`,
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {

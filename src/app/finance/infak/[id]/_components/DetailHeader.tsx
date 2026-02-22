@@ -3,6 +3,7 @@ import type { Timestamp } from "firebase/firestore";
 import {
   ArrowLeft,
   CheckCircle,
+  FileText,
   Loader2,
   Lock,
   Save,
@@ -98,11 +99,18 @@ export default function DetailHeader({
         </div>
       ) : (
         session.status === "completed" && (
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <div className="bg-gray-50 px-4 py-2 rounded-xl text-xs text-gray-500 flex items-center gap-2 border border-gray-100">
               <Lock className="w-3 h-3" />
               Data terkunci (Sudah difinalisasi)
             </div>
+            <Link
+              href={`/laporan/infak?id=${session.id}`}
+              className="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Cetak Laporan
+            </Link>
             {isBendahara && (
               <button
                 onClick={onDelete}

@@ -19,7 +19,8 @@ export default function InfakHeader({
           Manajemen Infak
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Kelola sesi pengumpulan infak (Jumat, harian, atau khusus)
+          Kelola sesi pengumpulan infak — Cetak laporan dari detail sesi yang
+          sudah difinalisasi
         </p>
       </div>
       {isBendahara && (
