@@ -11,7 +11,7 @@ import { UserData } from "./types";
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState<UserData[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Edit State

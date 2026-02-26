@@ -344,6 +344,7 @@ export default function AnnouncementsPage() {
           isOpen={isDetailOpen}
           onClose={() => setIsDetailOpen(false)}
           announcement={selectedAnnouncement}
+          userRole={user?.role}
         />
       )}
     </div>
