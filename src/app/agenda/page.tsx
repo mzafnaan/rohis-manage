@@ -1,36 +1,29 @@
 "use client";
 
-import AnimatedCard from "@/components/ui/AnimatedCard";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseDb } from "@/lib/firebase";
 import { Agenda } from "@/types/agenda";
-import type { Timestamp } from "firebase/firestore";
-import {
-  Calendar as CalendarIcon,
-  Clock,
-  MapPin,
-  Pencil,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Calendar as CalendarIcon, Plus, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { formatDate, getAgendaDate } from "./_utils";
 
 // Lazy-load heavy components
-const AgendaFormModal = dynamic(
-  () => import("@/components/agenda/AgendaFormModal"),
-  { ssr: false },
-);
+const AgendaFormModal = dynamic(() => import("./_components/AgendaFormModal"), {
+  ssr: false,
+});
 
 const AgendaCalendarPopover = dynamic(
   () =>
-    import("@/components/agenda/AgendaCalendar").then((mod) => {
-      // We'll wrap the calendar in the popover logic inline
+    import("./_components/AgendaCalendar").then((mod) => {
       return { default: mod.default };
     }),
   { ssr: false },
 );
+
+const AgendaCard = dynamic(() => import("./_components/AgendaCard"), {
+  ssr: false,
+});
 
 export default function AgendaPage() {
   const { user } = useAuth();
@@ -49,6 +42,7 @@ export default function AgendaPage() {
   const canAdd = isAdminOrSecretary || isChairman;
   const canEdit = isAdminOrSecretary || isChairman;
   const canDelete = isAdminOrSecretary || isChairman;
+  const canShare = user?.role === "ketua" || user?.role === "sekretaris";
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -84,6 +78,7 @@ export default function AgendaPage() {
     return () => unsubscribe?.();
   }, []);
 
+  // Handlers
   const handleDelete = async (id: string) => {
     if (!confirm("Apakah Anda yakin ingin menghapus agenda ini?")) return;
     try {
@@ -104,42 +99,6 @@ export default function AgendaPage() {
   const handleAddNew = () => {
     setEditingAgenda(null);
     setIsModalOpen(true);
-  };
-
-  const getAgendaDate = (timestamp: Timestamp | Date) => {
-    return "toDate" in timestamp
-      ? (timestamp as Timestamp).toDate()
-      : new Date(timestamp);
-  };
-
-  // Lazy-load date-fns only for formatting
-  const formatDate = (date: Date, fmt: string) => {
-    // Use native Intl for basic formatting to avoid loading date-fns eagerly
-    if (fmt === "MMM") {
-      return date.toLocaleDateString("id-ID", { month: "short" }).toUpperCase();
-    }
-    if (fmt === "dd") {
-      return date.toLocaleDateString("id-ID", { day: "2-digit" });
-    }
-    if (fmt === "yyyy") {
-      return date.getFullYear().toString();
-    }
-    if (fmt === "full") {
-      return date.toLocaleDateString("id-ID", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-    }
-    if (fmt === "short") {
-      return date.toLocaleDateString("id-ID", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-    }
-    return date.toLocaleDateString("id-ID");
   };
 
   // Filter Logic
@@ -182,7 +141,7 @@ export default function AgendaPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Calendar Toggle Button — simple dropdown instead of @headlessui */}
+            {/* Calendar Toggle Button */}
             <div className="relative">
               <button
                 onClick={() => setShowCalendar(!showCalendar)}
@@ -299,81 +258,16 @@ export default function AgendaPage() {
           ) : (
             <div className="grid gap-4">
               {filteredAgendas.map((item, index) => (
-                <AnimatedCard
+                <AgendaCard
                   key={item.id}
-                  delay={index * 0.05}
-                  className="relative group p-5 border-l-4 border-l-emerald-500 hover:shadow-lg transition-all duration-300 bg-white rounded-xl border-y border-r border-gray-100"
-                >
-                  <div className="flex flex-col md:flex-row gap-5 justify-between items-start">
-                    {/* Date Box */}
-                    <div className="flex-shrink-0 flex md:flex-col flex-row items-center md:items-center justify-center bg-gray-50 rounded-lg p-3 md:w-20 w-full border border-gray-100 gap-2 md:gap-0">
-                      <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-                        {formatDate(getAgendaDate(item.date), "MMM")}
-                      </span>
-                      <span className="text-2xl font-bold text-gray-800">
-                        {formatDate(getAgendaDate(item.date), "dd")}
-                      </span>
-                      <span className="text-xs text-gray-400 md:hidden block">
-                        {formatDate(getAgendaDate(item.date), "yyyy")}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 flex-1 w-full">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                          {item.category}
-                        </span>
-                        <div className="flex items-center gap-1 text-xs text-gray-400">
-                          <Clock className="w-3 h-3" />
-                          {item.startTime} - {item.endTime}
-                        </div>
-                      </div>
-
-                      <h3 className="text-lg font-bold text-gray-900 leading-tight">
-                        {item.title}
-                      </h3>
-
-                      <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line line-clamp-2 group-hover:line-clamp-none transition-all">
-                        {item.description}
-                      </p>
-
-                      <div className="pt-2 flex items-center gap-1.5 text-xs text-gray-500 font-medium">
-                        <MapPin className="w-3.5 h-3.5 text-red-500" />
-                        {item.location}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  {(canEdit || canDelete) && (
-                    <div className="absolute top-4 right-4 flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                      {canEdit && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(item);
-                          }}
-                          title="Edit Agenda"
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(item.id);
-                          }}
-                          title="Hapus Agenda"
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </AnimatedCard>
+                  agenda={item}
+                  index={index}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  canShare={canShare}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
               ))}
             </div>
           )}
