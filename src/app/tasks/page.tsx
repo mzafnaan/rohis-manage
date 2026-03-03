@@ -1,23 +1,89 @@
 "use client";
 
+import { useAuth } from "@/context/AuthContext";
+import { getFirebaseDb } from "@/lib/firebase";
+import { Agenda } from "@/types/agenda";
+import { CheckSquare, ClipboardList, Inbox } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { getAgendaDate } from "./_utils";
+
 import PicketScheduleTable from "@/components/tasks/PicketScheduleTable";
 import AnimatedCard from "@/components/ui/AnimatedCard";
-import { useAuth } from "@/context/AuthContext";
-import { Calendar, CheckSquare, Clock } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+
+const TaskCard = dynamic(() => import("./_components/TaskCard"), {
+  ssr: false,
+});
 
 export default function TasksPage() {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const [agendas, setAgendas] = useState<Agenda[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       router.push("/login");
     }
-  }, [user, loading, router]);
+  }, [user, authLoading, router]);
 
-  if (loading || !user) {
+  // Fetch all agendas that have tasks assigned
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    (async () => {
+      const db = await getFirebaseDb();
+      const { collection, onSnapshot, orderBy, query } =
+        await import("firebase/firestore");
+
+      const q = query(collection(db, "agendas"), orderBy("date", "asc"));
+
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const agendaList = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              date: data.date,
+            };
+          }) as Agenda[];
+          setAgendas(agendaList);
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Error fetching agendas:", error);
+          setLoading(false);
+        },
+      );
+    })();
+
+    return () => unsubscribe?.();
+  }, []);
+
+  // Filter tasks for current user's role and sort by nearest date
+  const myTasks = useMemo(() => {
+    if (!user?.role) return [];
+
+    return agendas
+      .filter((agenda) => {
+        if (!agenda.tasks || agenda.tasks.length === 0) return false;
+        const hasMyTask = agenda.tasks.some(
+          (t) => t.role.toLowerCase() === user.role.toLowerCase(),
+        );
+        const isActive = !agenda.status || agenda.status === "active";
+        return hasMyTask && isActive;
+      })
+      .sort((a, b) => {
+        const dateA = getAgendaDate(a.date).getTime();
+        const dateB = getAgendaDate(b.date).getTime();
+        return dateA - dateB;
+      });
+  }, [agendas, user?.role]);
+
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
@@ -32,6 +98,7 @@ export default function TasksPage() {
   return (
     <main className="min-h-screen pb-20 md:pb-0 bg-gray-50 p-6 md:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
+        {/* Page Header */}
         <header>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <CheckSquare className="w-8 h-8 text-emerald-600" />
@@ -47,107 +114,53 @@ export default function TasksPage() {
           <PicketScheduleTable canEdit={canEditSchedule} />
         </AnimatedCard>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Section 2: Tugas Pribadi */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-1 h-6 bg-emerald-500 rounded-full"></div>
-              <h2 className="font-bold text-gray-800 text-lg">Tugas Saya</h2>
+        {/* Section 2: Tugas Saya */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1 h-6 bg-emerald-500 rounded-full"></div>
+            <h2 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-emerald-600" />
+              Tugas Saya
+            </h2>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+              <p className="text-gray-500 text-sm">Memuat tugas...</p>
             </div>
-
-            <AnimatedCard
-              delay={0.2}
-              className="group bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-start gap-3 cursor-pointer"
-            >
-              <div className="pt-1">
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500 border-gray-300 cursor-pointer"
-                />
+          ) : myTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl border border-dashed border-gray-200 text-center px-6">
+              <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                <Inbox className="w-7 h-7 text-gray-300" />
               </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-900 group-hover:text-emerald-700 transition-colors">
-                  Membuat Flyer Kajian Jumat
-                </h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <Clock className="w-3 h-3 text-red-500" />
-                  <p className="text-xs text-red-500 font-medium">
-                    Tenggat: Hari Ini, 15:00
-                  </p>
-                </div>
-              </div>
-              <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                BARU
-              </span>
-            </AnimatedCard>
-
-            <AnimatedCard
-              delay={0.3}
-              className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-start gap-3 opacity-60"
-            >
-              <div className="pt-1">
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 text-gray-400 rounded border-gray-300"
-                  checked
-                  readOnly
-                />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium text-gray-500 line-through">
-                  Rekap Presensi Rapat
-                </h3>
-                <p className="text-xs text-gray-400 mt-1">Selesai kemarin</p>
-              </div>
-            </AnimatedCard>
-          </section>
-
-          {/* Section 3: Tugas Kegiatan */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-1 h-6 bg-purple-500 rounded-full"></div>
-              <h2 className="font-bold text-gray-800 text-lg">
-                Tugas Kegiatan
-              </h2>
+              <h3 className="text-base font-semibold text-gray-800 mb-1">
+                Tidak ada tugas aktif saat ini.
+              </h3>
+              <p className="text-gray-400 text-sm max-w-xs">
+                Semua tugas Anda sudah selesai atau belum ada agenda yang
+                membutuhkan tindakan dari peran Anda.
+              </p>
             </div>
-
-            <AnimatedCard
-              delay={0.4}
-              className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm"
-            >
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-3">
-                <h3 className="font-bold text-gray-800">
-                  Kajian Jumat (27 Jan)
-                </h3>
-                <Calendar className="w-4 h-4 text-gray-400" />
-              </div>
-
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3 text-sm text-gray-600">
-                  <div className="w-2 h-2 bg-yellow-400 rounded-full shrink-0"></div>
-                  <span className="flex-1">Persiapan Sound System</span>
-                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">
-                    Logistik
-                  </span>
-                </li>
-                <li className="flex items-center gap-3 text-sm text-gray-600">
-                  <div className="w-2 h-2 bg-blue-400 rounded-full shrink-0"></div>
-                  <span className="flex-1">Beli Snack Pemateri</span>
-                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">
-                    Bendahara
-                  </span>
-                </li>
-                <li className="flex items-center gap-3 text-sm text-gray-600">
-                  <div className="w-2 h-2 bg-emerald-400 rounded-full shrink-0"></div>
-                  <span className="flex-1">Dokumentasi</span>
-                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">
-                    Humas
-                  </span>
-                </li>
-              </ul>
-            </AnimatedCard>
-          </section>
-        </div>
+          ) : (
+            <div className="grid gap-4">
+              {myTasks.map((agenda, index) => {
+                const myTask = agenda.tasks!.find(
+                  (t) => t.role.toLowerCase() === user.role.toLowerCase(),
+                );
+                return (
+                  <TaskCard
+                    key={agenda.id}
+                    agenda={agenda}
+                    userRole={user.role}
+                    taskDescription={myTask?.description || ""}
+                    index={index}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

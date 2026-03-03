@@ -4,8 +4,19 @@ import Modal from "@/components/ui/Modal";
 import SelectInput from "@/components/ui/SelectInput";
 import { useAuth } from "@/context/AuthContext";
 import { getFirebaseDb } from "@/lib/firebase";
-import { Agenda } from "@/types/agenda";
+import { Agenda, AgendaTask } from "@/types/agenda";
+import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+
+const ROLE_OPTIONS = [
+  "bendahara",
+  "sekretaris",
+  "humas",
+  "perlengkapan",
+  "anggota",
+  "ketua",
+  "admin",
+];
 
 interface AgendaFormModalProps {
   isOpen: boolean;
@@ -30,16 +41,17 @@ export default function AgendaFormModal({
     endTime: "",
     location: "",
     description: "",
+    status: "active" as "active" | "done",
   });
+  const [tasks, setTasks] = useState<AgendaTask[]>([]);
 
   useEffect(() => {
     if (initialData) {
-      // Convert Firestore Timestamp to YYYY-MM-DD for input
       let dateStr = "";
       if (initialData.date && typeof initialData.date.toDate === "function") {
         dateStr = initialData.date.toDate().toISOString().split("T")[0];
       } else if (typeof initialData.date === "string") {
-        dateStr = initialData.date; // Fallback if it's already string
+        dateStr = initialData.date;
       }
 
       setFormData({
@@ -50,7 +62,9 @@ export default function AgendaFormModal({
         endTime: initialData.endTime || "",
         location: initialData.location || "",
         description: initialData.description || "",
+        status: initialData.status || "active",
       });
+      setTasks(initialData.tasks || []);
     } else {
       setFormData({
         title: "",
@@ -60,7 +74,9 @@ export default function AgendaFormModal({
         endTime: "",
         location: "",
         description: "",
+        status: "active",
       });
+      setTasks([]);
     }
   }, [initialData, isOpen]);
 
@@ -73,7 +89,6 @@ export default function AgendaFormModal({
       const { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } =
         await import("firebase/firestore");
 
-      // Create a Date object from the date string to store as Timestamp (Local Midnight)
       const dateObj = new Date(formData.date + "T00:00:00");
 
       const agendaData = {
@@ -84,14 +99,14 @@ export default function AgendaFormModal({
         endTime: formData.endTime,
         location: formData.location,
         description: formData.description,
+        status: formData.status,
+        tasks: tasks.filter((t) => t.role && t.description.trim()),
         updatedAt: serverTimestamp(),
       };
 
       if (initialData?.id) {
-        // Update existing
         await updateDoc(doc(db, "agendas", initialData.id), agendaData);
       } else {
-        // Create new
         await addDoc(collection(db, "agendas"), {
           ...agendaData,
           createdAt: serverTimestamp(),
@@ -116,6 +131,24 @@ export default function AgendaFormModal({
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const addTask = () => {
+    setTasks((prev) => [...prev, { role: "bendahara", description: "" }]);
+  };
+
+  const removeTask = (index: number) => {
+    setTasks((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateTask = (
+    index: number,
+    field: keyof AgendaTask,
+    value: string,
+  ) => {
+    setTasks((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, [field]: value } : t)),
+    );
   };
 
   return (
@@ -196,19 +229,34 @@ export default function AgendaFormModal({
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Lokasi
-          </label>
-          <input
-            type="text"
-            name="location"
-            required
-            value={formData.location}
-            onChange={handleChange}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            placeholder="Contoh: Masjid Sekolah"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Lokasi
+            </label>
+            <input
+              type="text"
+              name="location"
+              required
+              value={formData.location}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="Contoh: Masjid Sekolah"
+            />
+          </div>
+          <div>
+            <SelectInput
+              label="Status Agenda"
+              value={formData.status}
+              onChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  status: value as "active" | "done",
+                }))
+              }
+              options={["active", "done"]}
+            />
+          </div>
         </div>
 
         <div>
@@ -224,6 +272,63 @@ export default function AgendaFormModal({
             className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="Deskripsi singkat kegiatan..."
           />
+        </div>
+
+        {/* Task Assignments Section */}
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-gray-700">
+              Pembagian Tugas{" "}
+              <span className="text-gray-400 font-normal">(opsional)</span>
+            </label>
+            <button
+              type="button"
+              onClick={addTask}
+              className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Tambah Tugas
+            </button>
+          </div>
+
+          {tasks.length > 0 && (
+            <div className="space-y-3">
+              {tasks.map((task, index) => (
+                <div
+                  key={index}
+                  className="flex items-start gap-2 bg-gray-50 rounded-lg p-3 border border-gray-100"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+                    <SelectInput
+                      value={task.role}
+                      onChange={(value) => updateTask(index, "role", value)}
+                      options={ROLE_OPTIONS.map((role) => ({
+                        value: role,
+                        label: role.charAt(0).toUpperCase() + role.slice(1),
+                      }))}
+                      buttonClassName="py-1.5 text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={task.description}
+                      onChange={(e) =>
+                        updateTask(index, "description", e.target.value)
+                      }
+                      placeholder="Deskripsi tugas..."
+                      className="sm:col-span-2 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeTask(index)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0 mt-0.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="pt-2 flex justify-end gap-3">
